@@ -1,0 +1,18 @@
+{
+  "name": "planner-e2e-showcase",
+  "version": "1.0.0",
+  "description": "Playwright end-to-end tests for a demo trip planner, with a frozen clock and synthetic fixture data",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:chromium": "playwright test --project=chromium",
+    "demo": "node scripts/serve-demo.js",
+    "report": "playwright show-report"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.5"
+  }
+}

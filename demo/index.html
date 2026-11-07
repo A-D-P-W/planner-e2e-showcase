@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Planner (demo)</title>
+<style>
+  :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #5f5f5a; --line: #d8d8d2; --accent: #1f6f78; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ececea; --muted: #a3a39d; --line: #3a3a37; --accent: #6cc3cc; } }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  header, main { max-width: 640px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 20px; }
+  h1 { font-size: 1.4rem; margin: 0 0 12px; }
+  nav { display: flex; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  nav button, .day > button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  nav button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .day { margin: 10px 0; }
+  .day > button { width: 100%; text-align: left; }
+  .day ul { margin: 6px 0 0; }
+  .muted { color: var(--muted); }
+  label { display: block; padding: 4px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="trip-title">Trip Planner</h1>
+  <nav aria-label="Views">
+    <button type="button" data-view="today" aria-pressed="true">Today</button>
+    <button type="button" data-view="plan" aria-pressed="false">Full plan</button>
+    <button type="button" data-view="list" aria-pressed="false">List</button>
+  </nav>
+</header>
+<main id="view" aria-live="polite"><p class="muted">Loading…</p></main>
+<script>
+// Demo trip planner. All data comes from trip.json (synthetic). No network calls other than that one file.
+// State: the checklist's ticked items, in localStorage under STORE_KEY.
+const STORE_KEY = 'planner-demo:checked';
+let trip = null;
+
+// Dates are calendar dates, never instants: day i of the trip is (start + i days) on the calendar. Stepping by
+// 24 hours instead would repeat or skip a date at a daylight-saving change.
+function parseDate(iso) { const [y, m, d] = iso.split('-').map(Number); return { y, m, d }; }
+function dayDate(i) { const s = parseDate(trip.start); return new Date(s.y, s.m - 1, s.d + i); }
+function label(date) { return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
+function dayNumber(dateUTC) { return Math.round(dateUTC / 864e5); }
+function todayIndex() {
+  const s = parseDate(trip.start), now = new Date();
+  return dayNumber(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) - dayNumber(Date.UTC(s.y, s.m - 1, s.d));
+}
+function loadChecked() { try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch (e) { return []; } }
+function saveChecked(ids) { try { localStorage.setItem(STORE_KEY, JSON.stringify(ids)); } catch (e) { /* private mode: not saved */ } }
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  for (const k of kids) e.append(k);
+  return e;
+}
+function itemList(items) { return el('ul', {}, ...items.map(t => el('li', {}, t))); }
+
+const views = {
+  today() {
+    const i = todayIndex(), n = trip.days.length;
+    if (i < 0) return [el('h2', {}, `Trip starts in ${-i} day${i === -1 ? '' : 's'}`), el('p', { class: 'muted' }, `Day 1 is ${label(dayDate(0))}.`)];
+    if (i >= n) return [el('h2', {}, 'Trip complete'), el('p', { class: 'muted' }, `The last day was ${label(dayDate(n - 1))}.`)];
+    const day = trip.days[i];
+    return [el('h2', {}, `Today is Day ${i + 1} of ${n}`), el('p', {}, `${label(dayDate(i))} · ${day.title}`), itemList(day.items)];
+  },
+  plan() {
+    return trip.days.map((day, i) => {
+      const id = `day-${i + 1}`;
+      const btn = el('button', { type: 'button', 'aria-expanded': 'false', 'aria-controls': id }, `Day ${i + 1} · ${label(dayDate(i))}`);
+      const body = el('div', { id, hidden: '' }, el('p', { class: 'muted' }, day.title), itemList(day.items));
+      btn.addEventListener('click', () => {
+        const open = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!open));
+        body.hidden = open;
+      });
+      return el('section', { class: 'day' }, btn, body);
+    });
+  },
+  list() {
+    const checked = new Set(loadChecked());
+    const boxes = trip.checklist.map(item => {
+      const box = el('input', { type: 'checkbox', 'data-id': item.id });
+      box.checked = checked.has(item.id);
+      box.addEventListener('change', () => {
+        box.checked ? checked.add(item.id) : checked.delete(item.id);
+        saveChecked([...checked]);
+      });
+      return el('label', {}, box, ' ', item.text);
+    });
+    return [el('h2', {}, 'Packing list'), ...boxes];
+  },
+};
+
+function show(name) {
+  document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  document.getElementById('view').replaceChildren(...views[name]());
+}
+
+fetch('trip.json')
+  .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(data => {
+    trip = data;
+    document.title = `${trip.title} · Trip Planner (demo)`;
+    document.getElementById('trip-title').textContent = `${trip.title} trip`;
+    document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => show(b.dataset.view)));
+    show('today');
+  })
+  .catch(err => {
+    document.getElementById('view').replaceChildren(el('p', { role: 'alert' }, `Could not load the trip data (${err.message}).`));
+  });
+</script>
+</body>
+</html>

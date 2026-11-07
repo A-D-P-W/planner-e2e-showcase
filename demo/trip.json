@@ -1,0 +1,31 @@
+{
+  "title": "Example Island",
+  "start": "2030-10-28",
+  "travellers": ["Traveller A", "Traveller B", "Traveller C", "Traveller D"],
+  "days": [
+    { "title": "Arrival", "items": ["Land at Example Island Airport (XIA)", "Pick up the rental car", "Check in at Harbor Cottage"] },
+    { "title": "Harbor Town", "items": ["Morning market", "Walk the harbor path", "Dinner at the Pier Café"] },
+    { "title": "North Beach", "items": ["Snorkel at North Beach", "Picnic lunch", "Sunset at the dunes"] },
+    { "title": "Rainforest trail", "items": ["Guided rainforest walk", "Waterfall swim", "Early night"] },
+    { "title": "Lighthouse Point", "items": ["Lighthouse tour", "Tide pools", "Fish tacos at the point"] },
+    { "title": "Rest day", "items": ["Pool", "Laundry", "Board games"] },
+    { "title": "Clock change day", "items": ["Clocks go back one hour at 2:00", "Farmers' market", "Museum of the Sea"] },
+    { "title": "Move to Bay Hotel", "items": ["Check out of Harbor Cottage", "Drive the coast road", "Check in at Bay Hotel"] },
+    { "title": "Kayak the bay", "items": ["Kayak tour", "Lunch on the beach", "Night market"] },
+    { "title": "Volcano park", "items": ["Crater rim drive", "Lava tube walk", "Stargazing"] },
+    { "title": "Botanical garden", "items": ["Garden tour", "Tea house", "Free evening"] },
+    { "title": "Boat day", "items": ["Morning boat trip", "Dolphin watching", "Seafood dinner"] },
+    { "title": "Old Town", "items": ["Old Town walking tour", "Souvenir shopping", "Live music"] },
+    { "title": "Beach day", "items": ["South Beach", "Surf lesson", "Barbecue"] },
+    { "title": "Mountain lookout", "items": ["Lookout hike", "Picnic at the summit", "Pack bags"] },
+    { "title": "Last full day", "items": ["Favourite spots again", "Farewell dinner"] },
+    { "title": "Departure", "items": ["Check out of Bay Hotel", "Return the rental car", "Fly home"] }
+  ],
+  "checklist": [
+    { "id": "passports", "text": "Passports" },
+    { "id": "sunscreen", "text": "Sunscreen" },
+    { "id": "snorkel", "text": "Snorkel gear" },
+    { "id": "adapters", "text": "Plug adapters" },
+    { "id": "rain", "text": "Rain jackets" }
+  ]
+}
