@@ -1,8 +1,11 @@
 // Checks the tests against deliberately broken copies of the code ("mutants"). A mutant that every test passes means
 // the suite missed a bug, and the script exits 1.
 //   App mutants: copy demo/ to a temporary folder, plant the bug, serve that copy (DEMO_ROOT), run the Chromium suite.
-//   Server mutants: plant the bug in scripts/serve-demo.js itself, run the server tests, then restore the file (also
-//   on a crash or Ctrl+C). The expected statuses live in the tests, so a mutant cannot rewrite its own oracle.
+//   Server mutants: write the bug to scripts/serve-demo.mutant.js (git-ignored, next to the real file so its paths
+//   resolve the same way), point the server tests and the web server at it (SERVE_DEMO), then delete it. The tracked
+//   serve-demo.js is never written. The expected statuses live in the tests, so a mutant cannot rewrite its own oracle.
+// Both suites first run once against the unmutated code and must pass: a broken environment (no browser, port in use)
+// would otherwise fail every test and count every mutant as caught.
 // Usage: node scripts/mutants.js
 const fs = require('fs');
 const os = require('os');
@@ -11,6 +14,7 @@ const { spawnSync } = require('child_process');
 
 const DEMO = path.join(__dirname, '..', 'demo');
 const SERVER = path.join(__dirname, 'serve-demo.js');
+const MUTANT = path.join(__dirname, 'serve-demo.mutant.js');
 const APP_MUTANTS = [
   {
     name: 'Full plan steps 24 hours per day instead of one calendar day',
@@ -54,6 +58,11 @@ const SERVER_MUTANTS = [
     from: 'if (!file.startsWith(root + path.sep))',
     to: 'if (!file.startsWith(root))',
   },
+  {
+    name: 'Server: no check after following symlinks (a link inside demo/ that points outside it is served)',
+    from: '    if (!insideRoot(real)) {',
+    to: '    if (false) {',
+  },
 ];
 
 function runSuite(project, env) {
@@ -89,8 +98,17 @@ function report(mutant, stats) {
   if (!caught) survivors++;
   console.log(`${caught ? 'CAUGHT  ' : 'MISSED  '} ${stats.unexpected} of ${all} failed: ${mutant.name}`);
 }
+function baseline(project, env) {
+  const stats = runSuite(project, env);
+  if (stats.unexpected || stats.flaky || !stats.expected) {
+    console.error(`BASELINE FAILED: the ${project} suite does not pass on the unmutated code (${stats.unexpected} failed, ${stats.expected} passed), so no mutant result would mean anything.`);
+    process.exit(1);
+  }
+  console.log(`BASELINE  ${stats.expected} passed, ${stats.skipped} skipped: ${project} suite on the unmutated code`);
+}
 
 const app = read(path.join(DEMO, 'index.html'));
+baseline('chromium', {});
 for (const mutant of APP_MUTANTS) {
   check(mutant, app);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'planner-mutant-'));
@@ -99,15 +117,15 @@ for (const mutant of APP_MUTANTS) {
   try { report(mutant, runSuite('chromium', { DEMO_ROOT: dir })); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
-const serverBytes = fs.readFileSync(SERVER);
-const restore = () => fs.writeFileSync(SERVER, serverBytes);
-process.on('exit', restore);
-process.on('SIGINT', () => { restore(); process.exit(130); });
 const server = read(SERVER);
+const serverEnv = { CI: '1', SERVE_DEMO: path.relative(process.cwd(), MUTANT) };
+fs.rmSync(MUTANT, { force: true });
+fs.writeFileSync(MUTANT, server);
+try { baseline('server', serverEnv); } finally { fs.rmSync(MUTANT, { force: true }); }
 for (const mutant of SERVER_MUTANTS) {
   check(mutant, server);
-  fs.writeFileSync(SERVER, server.replace(mutant.from, mutant.to));
-  try { report(mutant, runSuite('server', { CI: '1' })); } finally { restore(); }
+  fs.writeFileSync(MUTANT, server.replace(mutant.from, mutant.to));
+  try { report(mutant, runSuite('server', serverEnv)); } finally { fs.rmSync(MUTANT, { force: true }); }
 }
 
 console.log(survivors ? `VERDICT: ${survivors} of ${total} mutant(s) not caught` : `VERDICT: all ${total} mutants caught`);

@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
 import * as net from 'net';
+import * as fs from 'fs';
 import * as path from 'path';
 
 // The demo server's own input handling. These tests need no browser, so they run once, in the "server" project.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { resolveRequest, ROOT } = require('../scripts/serve-demo.js');
+// SERVE_DEMO: scripts/mutants.js points this (and the web server) at a mutated copy of the server.
+const { resolveRequest, insideRoot, ROOT } = require(process.env.SERVE_DEMO ? path.resolve(process.env.SERVE_DEMO) : '../scripts/serve-demo.js');
 
 // Sends a request target exactly as written. A browser or an HTTP client would re-encode or normalise it first,
 // which is the point of the attack inputs below, so these go over a raw socket.
@@ -21,6 +23,16 @@ function rawGet(baseURL: string, target: string): Promise<{ status: number; body
     socket.on('error', reject);
   });
 }
+
+test.describe('symlink containment', () => {
+  test('a real path outside the demo folder is refused, one inside is allowed', () => {
+    const real = fs.realpathSync(ROOT);
+    expect(insideRoot(path.join(real, 'trip.json'))).toBe(true);
+    expect(insideRoot(path.join(real, '..', 'package.json'))).toBe(false);
+    expect(insideRoot(real + '-private' + path.sep + 'x.json')).toBe(false);
+    expect(insideRoot(real)).toBe(false);
+  });
+});
 
 test.describe('request path handling', () => {
   test('"/" serves the app\'s index.html', () => {
@@ -58,6 +70,24 @@ test.describe('request path handling', () => {
 });
 
 test.describe('the running server', () => {
+  // A symlink inside the demo folder that points outside it. The link is made for this test and removed after it.
+  test('a symlink that leads outside the demo folder gets 403 and no file contents', async ({ baseURL }) => {
+    const link = path.join(ROOT, '__link-test.json');
+    fs.rmSync(link, { force: true });
+    try {
+      fs.symlinkSync(path.join(ROOT, '..', 'package.json'), link, 'file');
+    } catch (e: any) {
+      test.skip(e.code === 'EPERM', 'this machine does not allow symlinks for this user');
+      throw e;
+    }
+    try {
+      const r = await rawGet(baseURL!, '/__link-test.json');
+      expect(r.status).toBe(403);
+      expect(r.body).not.toContain('planner-e2e-showcase');
+    } finally {
+      fs.rmSync(link, { force: true });
+    }
+  });
   // Each crash input is followed by a normal request: a server that died would refuse that connection.
   for (const [target, status] of [['/%E0%A4%A', 400], ['/a%00b', 400]] as const) {
     test(`${target} gets ${status} and the server keeps serving`, async ({ baseURL }) => {

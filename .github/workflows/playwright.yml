@@ -6,9 +6,10 @@ on:
     branches: [main]
 permissions:
   contents: read
-# A newer push to the same branch cancels the older run.
+# A newer push to a pull request cancels that pull request's older run. Each push to main gets its own group (its
+# commit SHA), so no main commit is ever cancelled or dropped as pending.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 jobs:
   test:

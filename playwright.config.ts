@@ -14,6 +14,8 @@ export default defineConfig({
     timezoneId: 'America/Los_Angeles',
     locale: 'en-US',
     trace: 'on-first-retry',
+    // A service worker's own fetches are not page 'request' events; block them so the egress test sees every request.
+    serviceWorkers: 'block',
   },
   projects: [
     // The server's input-handling tests need no browser, so they run once, in their own project.
@@ -24,9 +26,10 @@ export default defineConfig({
   ],
   // Serve ./demo before the tests and stop it afterwards, so the suite does not depend on a deployed site.
   webServer: {
-    command: 'node scripts/serve-demo.js',
+    // SERVE_DEMO: scripts/mutants.js points this at a mutated copy, so the tracked server file is never edited.
+    command: 'node ' + (process.env.SERVE_DEMO || 'scripts/serve-demo.js'),
     url: 'http://127.0.0.1:4173',
     // Never reuse a running server when DEMO_ROOT is set: scripts/mutants.js must test the broken copy it serves.
-    reuseExistingServer: !process.env.CI && !process.env.DEMO_ROOT,
+    reuseExistingServer: !process.env.CI && !process.env.DEMO_ROOT && !process.env.SERVE_DEMO,
   },
 });

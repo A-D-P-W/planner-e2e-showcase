@@ -6,3 +6,6 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+# written and removed by scripts/mutants.js and tests/server.spec.ts
+scripts/serve-demo.mutant.js
+demo/__link-test.json

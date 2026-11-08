@@ -9,3 +9,7 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
+    # One pull request for all npm updates, so CI (three browsers plus the mutants) runs once per month, not per package.
+    groups:
+      npm:
+        patterns: ["*"]

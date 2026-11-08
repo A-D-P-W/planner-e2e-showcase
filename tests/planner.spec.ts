@@ -57,6 +57,7 @@ test.describe('loading', () => {
   test('the app makes no requests outside the local demo server', async ({ page, baseURL }) => {
     const requests: string[] = [];
     page.on('request', r => requests.push(r.url()));
+    page.on('websocket', ws => requests.push(ws.url())); // WebSocket connections are not 'request' events
     await open(page);
     for (const view of ['Full plan', 'List', 'Today']) await page.getByRole('button', { name: view, exact: true }).click();
     const origin = new URL(baseURL!).origin;

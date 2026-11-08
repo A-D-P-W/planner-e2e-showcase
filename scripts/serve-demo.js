@@ -36,29 +36,46 @@ function resolveRequest(rawUrl, root = ROOT) {
   return { status: 200, file };
 }
 
+// The resolved path is checked again after following symlinks: a link inside the folder that points outside it is
+// refused. ROOT itself may be a symlink (a temporary folder on macOS is one), so it is compared in real form too.
+const ROOT_REAL = fs.realpathSync(ROOT);
+function insideRoot(real) {
+  const rel = path.relative(ROOT_REAL, real);
+  return rel !== '' && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel);
+}
+
 function handle(req, res) {
   const { status, file } = resolveRequest(req.url);
   if (status !== 200) {
     res.writeHead(status, { 'Content-Type': 'text/plain' }).end(status === 400 ? 'Bad request' : 'Forbidden');
     return;
   }
-  fs.readFile(file, (err, data) => {
+  fs.realpath(file, (err, real) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
       return;
     }
-    res.writeHead(200, {
-      'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream',
-      'Cache-Control': 'no-store',
+    if (!insideRoot(real)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
+      return;
+    }
+    fs.readFile(real, (err2, data) => {
+      if (err2) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': TYPES[path.extname(real)] || 'application/octet-stream',
+        'Cache-Control': 'no-store',
+      });
+      res.end(data);
     });
-    res.end(data);
   });
 }
-
 if (require.main === module) {
   http.createServer(handle).listen(PORT, '127.0.0.1', () => {
     console.log(`Demo planner running at http://127.0.0.1:${PORT}/ (serving ${ROOT})`);
   });
 }
 
-module.exports = { resolveRequest, ROOT };
+module.exports = { resolveRequest, insideRoot, ROOT };
