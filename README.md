@@ -14,9 +14,9 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 | Today view | Eight frozen clock instants give the expected heading: before the trip, the day before ("1 day", singular), first day, both sides of the clock change, the last minute of the trip, and after it. One more test checks that day's items. |
 | Full plan view | All 17 days are listed. Each day has the expected weekday and date (17 generated tests). No date repeats or is skipped. A day opens and closes. |
 | List view | Every checklist item is shown, unticked at first. A ticked item stays ticked after a reload, and the other items stay unticked. |
-| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. Methods other than GET and HEAD get 405, and served files carry `X-Content-Type-Options: nosniff`. No hostile path resolves to a file outside `demo/`. |
+| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. A hard link inside `demo/` to a file outside it gets 403, and a named pipe (FIFO) gets 404 without tying up the server. Methods other than GET and HEAD get 405, HEAD returns the size without reading the file, and served files carry `X-Content-Type-Options: nosniff`. |
 
-39 tests per browser, plus 15 server tests that need no browser and run once: 132 in all.
+39 tests per browser, plus 18 server tests that need no browser and run once: 135 in all (the FIFO test is skipped on Windows).
 
 ## How the tests are built
 
@@ -72,7 +72,10 @@ environment cannot count as a caught bug. It exits 1 if any bug gets through, an
   opened once and the check runs on the opened file, so swapping the path for a link after the check cannot change what
   is read. A round-3 red-team review leaked an outside file in 295 of 4000 requests with the old check-then-read code;
   the new code leaked 0 of 8000 on Linux. On Windows and macOS (no `/proc`) the check compares the opened file's
-  identity with the real path's, which narrows the race but does not close it (22 of 4000 in a forced test).
+  identity with its real path's instead. A one-off forced test once reported leaks on that path; later runs (12,000
+  requests) found none, and no test in this repository measures it, so treat that path as unmeasured.
+  A hard link is not a path trick: its real path is inside `demo/`, so the server refuses any file with more than one
+  link, which also refuses legitimately hard-linked copies.
 - **No traffic leaves the machine.** A test records every request and every WebSocket connection the app opens, and
   fails on any that leaves the local server. Service workers are blocked, so none of their fetches go unrecorded.
 - **Trip data is shown as text, never parsed as HTML.** The app builds the page with `createElement` and appends the

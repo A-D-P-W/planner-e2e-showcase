@@ -55,22 +55,26 @@ function handle(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
   const { status, file } = resolveRequest(req.url);
   if (status !== 200) return send(res, status, status === 400 ? 'Bad request' : 'Forbidden');
-  fs.open(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0), (err, fd) => {
+  fs.open(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0), (err, fd) => {
     if (err) return send(res, err.code === 'ELOOP' ? 403 : 404, err.code === 'ELOOP' ? 'Forbidden' : 'Not found');
     const done = (code, body, headers) => fs.close(fd, () => (headers ? res.writeHead(code, headers).end(body) : send(res, code, body)));
     let real, st;
     try {
       st = fs.fstatSync(fd);
       if (!st.isFile()) return done(404, 'Not found');
+      if (st.nlink > 1) return done(403, 'Forbidden'); // a hardlink can name a file outside ROOT; realpath cannot see it
       if (process.platform === 'linux') real = fs.realpathSync('/proc/self/fd/' + fd);
       else { real = fs.realpathSync(file); const s2 = fs.statSync(real); if (s2.dev !== st.dev || s2.ino !== st.ino) return done(403, 'Forbidden'); }
     } catch (e) { return done(404, 'Not found'); }
     if (!insideRoot(real)) return done(403, 'Forbidden');
+    const headers = { 'Content-Type': TYPES[path.extname(real)] || 'application/octet-stream', 'Content-Length': st.size,
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+    if (req.method === 'HEAD') return done(200, undefined, headers); // HEAD needs the size, not the bytes
     const data = Buffer.alloc(st.size);
     fs.read(fd, data, 0, st.size, 0, (err2, n) => {
       if (err2) return done(404, 'Not found');
-      done(200, req.method === 'HEAD' ? undefined : data.subarray(0, n), { 'Content-Type': TYPES[path.extname(real)] || 'application/octet-stream',
-        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+      if (n !== st.size) return done(500, 'File changed while reading'); // truncated (or short read) after fstat
+      done(200, data, headers);
     });
   });
 }

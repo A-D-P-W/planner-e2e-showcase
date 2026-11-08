@@ -10,3 +10,5 @@ node_modules/
 scripts/serve-demo.mutant.js
 demo/__link-test.json
 demo/__link-dir
+demo/__hard-test.json
+demo/__fifo-test.json

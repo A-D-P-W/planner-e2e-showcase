@@ -64,6 +64,17 @@ const SERVER_MUTANTS = [
     to: '    if (false) return',
   },
   {
+    name: 'Server: no link-count check (a hard link inside demo/ to an outside file is served)',
+    from: '      if (st.nlink > 1) return done(403',
+    to: '      if (false) return done(403',
+  },
+  {
+    name: 'Server: blocking open (a FIFO inside demo/ holds a thread until a writer appears)',
+    from: ' | (fs.constants.O_NONBLOCK || 0)',
+    to: '',
+    skipOn: ['win32'], // the FIFO test that catches it cannot run on Windows (no FIFOs in NTFS)
+  },
+  {
     name: 'Server: every HTTP method is served, not only GET and HEAD',
     from: "  if (req.method !== 'GET' && req.method !== 'HEAD') return send",
     to: '  if (false) return send',
@@ -134,6 +145,7 @@ fs.writeFileSync(MUTANT, server);
 try { baseline('server', serverEnv); } finally { fs.rmSync(MUTANT, { force: true }); }
 for (const mutant of SERVER_MUTANTS) {
   check(mutant, server);
+  if (mutant.skipOn && mutant.skipOn.includes(process.platform)) { console.log('SKIPPED   on ' + process.platform + ': ' + mutant.name); continue; }
   fs.writeFileSync(MUTANT, server.replace(mutant.from, mutant.to));
   try { report(mutant, runSuite('server', serverEnv)); } finally { fs.rmSync(MUTANT, { force: true }); }
 }

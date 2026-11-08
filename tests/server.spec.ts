@@ -88,6 +88,28 @@ test.describe('the running server', () => {
       fs.rmSync(link, { force: true });
     }
   });
+  // A hard link inside the demo folder to a file outside it: its real path is inside, so only the link count shows it.
+  test('a hard link to a file outside the demo folder gets 403 and no file contents', async ({ baseURL }) => {
+    const link = path.join(ROOT, '__hard-test.json');
+    fs.rmSync(link, { force: true });
+    try { fs.linkSync(path.join(ROOT, '..', 'package.json'), link); } catch (e: any) { test.skip(e.code === 'EXDEV' || e.code === 'EPERM', 'cannot hard-link here'); throw e; }
+    try {
+      const r = await rawGet(baseURL!, '/__hard-test.json');
+      expect(r.status).toBe(403);
+      expect(r.body).not.toContain('planner-e2e-showcase');
+    } finally { fs.rmSync(link, { force: true }); }
+  });
+  // A FIFO: a blocking open waits for a writer and holds a threadpool thread; four of them stopped the server.
+  test('a FIFO gets 404 and four of them do not stop the server', async ({ baseURL }) => {
+    test.skip(process.platform === 'win32', 'no FIFOs in the Windows file system');
+    const fifo = path.join(ROOT, '__fifo-test.json');
+    fs.rmSync(fifo, { force: true });
+    require('child_process').execFileSync('mkfifo', [fifo]);
+    try {
+      for (let i = 0; i < 4; i++) expect((await rawGet(baseURL!, '/__fifo-test.json')).status).toBe(404);
+      expect((await rawGet(baseURL!, '/')).status).toBe(200);
+    } finally { fs.rmSync(fifo, { force: true }); }
+  });
   // Each crash input is followed by a normal request: a server that died would refuse that connection.
   for (const [target, status] of [['/%E0%A4%A', 400], ['/a%00b', 400]] as const) {
     test(`${target} gets ${status} and the server keeps serving`, async ({ baseURL }) => {
@@ -124,6 +146,13 @@ test.describe('the running server', () => {
       expect(r.status, method).toBe(405);
       expect(r.head, method).toContain('allow: get, head');
     }
+  });
+
+  test('HEAD gives the size and no body', async ({ baseURL }) => {
+    const r = await rawGet(baseURL!, '/trip.json', 'HEAD');
+    expect(r.status).toBe(200);
+    expect(r.head).toContain('content-length: ' + fs.statSync(path.join(ROOT, 'trip.json')).size);
+    expect(r.body).toBe('');
   });
 
   test('served files carry X-Content-Type-Options: nosniff', async ({ baseURL }) => {
