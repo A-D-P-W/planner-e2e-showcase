@@ -14,8 +14,9 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 | Today view | Eight frozen clock instants give the expected heading: before the trip, the day before ("1 day", singular), first day, both sides of the clock change, the last minute of the trip, and after it. One more test checks that day's items. |
 | Full plan view | All 17 days are listed. Each day has the expected weekday and date (17 generated tests). No date repeats or is skipped. A day opens and closes. |
 | List view | Every checklist item is shown, unticked at first. A ticked item stays ticked after a reload, and the other items stay unticked. |
+| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents. No hostile path resolves to a file outside `demo/`. |
 
-38 tests per browser, 114 in all.
+38 tests per browser, plus 8 server tests that need no browser and run once: 122 in all.
 
 ## How the tests are built
 
@@ -36,13 +37,31 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 
 ## Checked against broken versions of the app
 
-Each test was run against deliberate bugs in `demo/index.html` (Chromium, local run). Each bug was caught:
+`npm run mutants` (`scripts/mutants.js`) plants each bug below in a copy of `demo/index.html`, serves the copy and runs the
+Chromium suite against it. It exits 1 if any bug gets through, and CI runs it on every push. Each bug is caught:
 
 | Bug introduced | Tests that failed |
 |---|---|
 | Full plan steps 24 hours per day instead of one calendar day | 11 of 38: Day 8 to Day 17 labels, and "no date repeats or is skipped" |
 | Today view takes the time elapsed since local midnight on Day 1, divides it by 24 hours and rounds down, instead of counting calendar days | 2 of 38: 23:30 on the 25-hour day, and the last minute of the trip |
 | The ticked checklist item is not saved | 1 of 38: "a ticked item stays ticked after a reload" |
+
+## Security-relevant properties
+
+- **Crafted input does not take the server down.** On 2026-11-08 two requests sent over a raw socket crashed the demo
+  server: `/%E0%A4%A` (`decodeURIComponent` threw `URIError`) and `/a%00b` (the null byte made `fs.readFile` throw).
+  After either one the server refused every later connection. Both now get 400. The tests send the same two requests
+  over a raw socket, then check that the server still answers. Undoing each part of the fix makes 2 or 3 server tests fail.
+- **No file outside `demo/` is served.** The old code joined and normalised the path, which quietly clamped a decoded
+  `../` back to the demo folder, so its "outside the folder" check could never fire. The path is now resolved, an
+  encoded `../` reaches the check and gets 403, and a test pins that.
+- **No traffic leaves the machine.** A test records every request the app makes and fails on any that leaves the
+  local server.
+- **Trip data is shown as text, never parsed as HTML.** The app builds the page with `createElement` and
+  `textContent`, so text in `trip.json` cannot add markup or script to it.
+- **The tests are tested.** `npm run mutants` plants known bugs and fails if the suite misses one (see above).
+- **CI has least privilege.** The workflow token is read-only (`contents: read`), checkout keeps no credentials
+  (`persist-credentials: false`), and every action is pinned to a commit.
 
 ## Run it locally
 
@@ -57,6 +76,7 @@ npm test
 | `npm run test:chromium` | Runs the suite in Chromium only |
 | `npm run demo` | Serves the demo app at http://127.0.0.1:4173/ |
 | `npm run report` | Opens the HTML report from the last run |
+| `npm run mutants` | Runs the Chromium suite against each deliberately broken copy of the app |
 
-GitHub Actions (`.github/workflows/playwright.yml`) runs the suite in all three browsers on every push and pull request
-to `main`, and saves the HTML report with each run. The actions are pinned by commit.
+GitHub Actions (`.github/workflows/playwright.yml`) runs the suite in all three browsers, then the mutants, on every push and pull
+request to `main`, and saves the HTML report with each run. The actions are pinned by commit.
