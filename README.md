@@ -40,7 +40,7 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 `npm run mutants` (`scripts/mutants.js`) plants each bug below and runs the tests against it: app bugs in a copy of
 `demo/index.html` with the Chromium suite, server bugs in a git-ignored copy of `scripts/serve-demo.js` with the server
 tests (the tracked file is never written). Both suites first run on the unmutated code and must pass, so a broken
-environment cannot count as a caught bug. It exits 1 if any bug gets through, and CI runs it on every push. Each bug is caught:
+environment cannot count as a caught bug. It exits 1 if any bug gets through, and CI runs it on every push. Each bug is caught (counts from the Linux CI run):
 
 | Bug introduced | Tests that failed |
 |---|---|
@@ -48,13 +48,15 @@ environment cannot count as a caught bug. It exits 1 if any bug gets through, an
 | Today view takes the time elapsed since local midnight on Day 1, divides it by 24 hours and rounds down, instead of counting calendar days | 2 of 39: 23:30 on the 25-hour day, and the last minute of the trip |
 | The ticked checklist item is not saved | 1 of 39: "a ticked item stays ticked after a reload" |
 | Day items are written with `innerHTML` instead of as text | 1 of 39: "markup in the trip data is shown as text and never runs" |
-| Server: malformed percent-encoding throws instead of returning 400 | 8 of 15 server tests (the crash also fails the tests that follow it) |
-| Server: no null-byte check | 7 of 15 |
-| Server: join + normalize instead of resolve, so a decoded `../` is clamped and the folder check never fires | 4 of 15 |
-| Server: folder check without the path separator, so a sibling such as `demo-private` passes | 2 of 15 |
-| Server: no check after following symlinks, so a link inside `demo/` that points outside it is served | 2 of 15 |
-| Server: every HTTP method is served, not only GET and HEAD | 1 of 15 |
-| Server: no `X-Content-Type-Options: nosniff` on served files | 1 of 15 |
+| Server: malformed percent-encoding throws instead of returning 400 | 9 of 18 server tests (the crash also fails the tests that follow it) |
+| Server: no null-byte check | 8 of 18 |
+| Server: join + normalize instead of resolve, so a decoded `../` is clamped and the folder check never fires | 4 of 18 |
+| Server: folder check without the path separator, so a sibling such as `demo-private` passes | 2 of 18 |
+| Server: no check after following symlinks, so a link inside `demo/` that points outside it is served | 1 of 18 |
+| Server: no link-count check, so a hard link inside `demo/` to an outside file is served | 1 of 18 |
+| Server: blocking open, so a FIFO inside `demo/` holds a thread until a writer appears (Linux and macOS only) | 1 of 18 |
+| Server: every HTTP method is served, not only GET and HEAD | 1 of 18 |
+| Server: no `X-Content-Type-Options: nosniff` on served files | 1 of 18 |
 
 ## Security-relevant properties
 
