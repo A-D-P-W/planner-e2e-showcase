@@ -39,6 +39,21 @@ test.describe('loading', () => {
     await expect(page.getByRole('alert')).toHaveText('Could not load the trip data (HTTP 500).');
   });
 
+  // Trip data is untrusted input. A fixture whose text is markup must appear as that literal text, and its script must
+  // never run: every view is opened so each rendering path sees the payload.
+  test('markup in the trip data is shown as text and never runs', async ({ page }) => {
+    const payload = '<img src=x onerror="window.__pwned=1"><b>bold</b>';
+    const hostile = { ...trip, title: payload, days: trip.days.map(d => ({ title: payload, items: [payload] })),
+      checklist: [{ id: 'x', text: payload }] };
+    await page.route('**/trip.json', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(hostile) }));
+    await open(page);
+    for (const view of ['Full plan', 'List', 'Today']) await page.getByRole('button', { name: view, exact: true }).click();
+    await page.getByRole('button', { name: 'Full plan', exact: true }).click();
+    await page.getByRole('button', { name: /^Day 1 · / }).click();
+    expect(await page.evaluate(() => (window as any).__pwned)).toBeUndefined();
+    await expect(page.locator('main img, main b, header img, header b')).toHaveCount(0);
+    await expect(page.locator('#day-1').getByRole('listitem')).toHaveText(payload);
+  });
   test('the app makes no requests outside the local demo server', async ({ page, baseURL }) => {
     const requests: string[] = [];
     page.on('request', r => requests.push(r.url()));

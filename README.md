@@ -10,13 +10,13 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 
 | Area | Tests |
 |---|---|
-| Loading | The title names the trip. A failed fixture load (HTTP 500) shows an error message instead of an empty page. The app makes no requests outside the local demo server. |
+| Loading | The title names the trip. A failed fixture load (HTTP 500) shows an error message instead of an empty page. The app makes no requests outside the local demo server. A trip file full of markup shows as literal text in every view, and its script never runs. |
 | Today view | Eight frozen clock instants give the expected heading: before the trip, the day before ("1 day", singular), first day, both sides of the clock change, the last minute of the trip, and after it. One more test checks that day's items. |
 | Full plan view | All 17 days are listed. Each day has the expected weekday and date (17 generated tests). No date repeats or is skipped. A day opens and closes. |
 | List view | Every checklist item is shown, unticked at first. A ticked item stays ticked after a reload, and the other items stay unticked. |
-| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents. No hostile path resolves to a file outside `demo/`. |
+| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). No hostile path resolves to a file outside `demo/`. |
 
-38 tests per browser, plus 8 server tests that need no browser and run once: 122 in all.
+39 tests per browser, plus 10 server tests that need no browser and run once: 127 in all.
 
 ## How the tests are built
 
@@ -35,30 +35,40 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 - **Hermetic.** Playwright starts a small static server (`scripts/serve-demo.js`, no dependencies) and stops it after
   the run. A test records every request and fails on any request that leaves that server.
 
-## Checked against broken versions of the app
+## Checked against broken versions of the code
 
-`npm run mutants` (`scripts/mutants.js`) plants each bug below in a copy of `demo/index.html`, serves the copy and runs the
-Chromium suite against it. It exits 1 if any bug gets through, and CI runs it on every push. Each bug is caught:
+`npm run mutants` (`scripts/mutants.js`) plants each bug below and runs the tests against it: app bugs in a copy of
+`demo/index.html` with the Chromium suite, server bugs in `scripts/serve-demo.js` with the server tests (the file is
+restored afterwards). It exits 1 if any bug gets through, and CI runs it on every push. Each bug is caught:
 
 | Bug introduced | Tests that failed |
 |---|---|
-| Full plan steps 24 hours per day instead of one calendar day | 11 of 38: Day 8 to Day 17 labels, and "no date repeats or is skipped" |
-| Today view takes the time elapsed since local midnight on Day 1, divides it by 24 hours and rounds down, instead of counting calendar days | 2 of 38: 23:30 on the 25-hour day, and the last minute of the trip |
-| The ticked checklist item is not saved | 1 of 38: "a ticked item stays ticked after a reload" |
+| Full plan steps 24 hours per day instead of one calendar day | 11 of 39: Day 8 to Day 17 labels, and "no date repeats or is skipped" |
+| Today view takes the time elapsed since local midnight on Day 1, divides it by 24 hours and rounds down, instead of counting calendar days | 2 of 39: 23:30 on the 25-hour day, and the last minute of the trip |
+| The ticked checklist item is not saved | 1 of 39: "a ticked item stays ticked after a reload" |
+| Day items are written with `innerHTML` instead of as text | 1 of 39: "markup in the trip data is shown as text and never runs" |
+| Server: malformed percent-encoding throws instead of returning 400 | 5 of 10 server tests (the crash also fails the tests that follow it) |
+| Server: no null-byte check | 4 of 10 |
+| Server: join + normalize instead of resolve, so a decoded `../` is clamped and the folder check never fires | 4 of 10 |
+| Server: folder check without the path separator, so a sibling such as `demo-private` passes | 2 of 10 |
 
 ## Security-relevant properties
 
 - **Crafted input does not take the server down.** On 2026-11-08 two requests sent over a raw socket crashed the demo
   server: `/%E0%A4%A` (`decodeURIComponent` threw `URIError`) and `/a%00b` (the null byte made `fs.readFile` throw).
   After either one the server refused every later connection. Both now get 400. The tests send the same two requests
-  over a raw socket, then check that the server still answers. Undoing each part of the fix makes 2 or 3 server tests fail.
+  over a raw socket, then check that the server still answers. `npm run mutants` undoes each part of the fix in turn,
+  and each one is caught (table above).
 - **No file outside `demo/` is served.** The old code joined and normalised the path, which quietly clamped a decoded
   `../` back to the demo folder, so its "outside the folder" check could never fire. The path is now resolved, an
-  encoded `../` reaches the check and gets 403, and a test pins that.
+  encoded `../` reaches the check and gets 403. A second test uses a sibling folder with the same name prefix
+  (`demo-private`), which a check without the path separator would serve. Both expected statuses are written in the tests,
+  not computed from the code under test.
 - **No traffic leaves the machine.** A test records every request the app makes and fails on any that leaves the
   local server.
-- **Trip data is shown as text, never parsed as HTML.** The app builds the page with `createElement` and
-  `textContent`, so text in `trip.json` cannot add markup or script to it.
+- **Trip data is shown as text, never parsed as HTML.** The app builds the page with `createElement` and appends the
+  strings, which the DOM inserts as text nodes. A test loads a trip file full of markup and an `onerror` script, opens every
+  view, and checks that the markup shows as literal text and the script never runs.
 - **The tests are tested.** `npm run mutants` plants known bugs and fails if the suite misses one (see above).
 - **CI has least privilege.** The workflow token is read-only (`contents: read`), checkout keeps no credentials
   (`persist-credentials: false`), and every action is pinned to a commit.

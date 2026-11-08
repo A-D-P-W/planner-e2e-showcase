@@ -40,6 +40,13 @@ test.describe('request path handling', () => {
     expect(resolveRequest('/demo/..%2f..%2fpackage.json')).toEqual({ status: 403 });
   });
 
+  // A sibling folder whose name starts with the demo folder's name (demo-private next to demo). A check written as
+  // file.startsWith(ROOT) without the separator would serve it; the expected 403 is stated here, not computed.
+  test("a sibling folder that shares the demo folder's name prefix is refused with 403", () => {
+    const sibling = path.basename(ROOT) + '-private';
+    expect(resolveRequest('/..%2f' + sibling + '%2fsecret.txt')).toEqual({ status: 403 });
+  });
+
   test('no hostile path resolves to a file outside the demo folder', () => {
     const hostile = ['/../package.json', '/%2e%2e/package.json', '/..%2fpackage.json', '/..%5cpackage.json',
       '/%2e%2e%2f%2e%2e%2fetc/passwd', '/....//package.json', '/%252e%252e%252fpackage.json', '//etc/passwd'];
@@ -58,6 +65,10 @@ test.describe('the running server', () => {
       expect((await rawGet(baseURL!, '/')).status).toBe(200);
     });
   }
+
+  test('a sibling-prefix path gets 403', async ({ baseURL }) => {
+    expect((await rawGet(baseURL!, '/..%2f' + path.basename(ROOT) + '-private%2fsecret.txt')).status).toBe(403);
+  });
 
   test('an encoded "../" gets 403 and no file contents', async ({ baseURL }) => {
     const r = await rawGet(baseURL!, '/..%2fpackage.json');
