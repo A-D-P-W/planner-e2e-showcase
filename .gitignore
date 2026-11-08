@@ -9,3 +9,4 @@ node_modules/
 # written and removed by scripts/mutants.js and tests/server.spec.ts
 scripts/serve-demo.mutant.js
 demo/__link-test.json
+demo/__link-dir

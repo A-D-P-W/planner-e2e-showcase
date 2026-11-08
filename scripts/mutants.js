@@ -60,8 +60,18 @@ const SERVER_MUTANTS = [
   },
   {
     name: 'Server: no check after following symlinks (a link inside demo/ that points outside it is served)',
-    from: '    if (!insideRoot(real)) {',
-    to: '    if (false) {',
+    from: '    if (!insideRoot(real)) return',
+    to: '    if (false) return',
+  },
+  {
+    name: 'Server: every HTTP method is served, not only GET and HEAD',
+    from: "  if (req.method !== 'GET' && req.method !== 'HEAD') return send",
+    to: '  if (false) return send',
+  },
+  {
+    name: 'Server: no X-Content-Type-Options: nosniff on served files',
+    from: "'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }",
+    to: "'Cache-Control': 'no-store' }",
   },
 ];
 

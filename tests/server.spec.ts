@@ -10,16 +10,16 @@ const { resolveRequest, insideRoot, ROOT } = require(process.env.SERVE_DEMO ? pa
 
 // Sends a request target exactly as written. A browser or an HTTP client would re-encode or normalise it first,
 // which is the point of the attack inputs below, so these go over a raw socket.
-function rawGet(baseURL: string, target: string): Promise<{ status: number; body: string }> {
+function rawGet(baseURL: string, target: string, method = 'GET'): Promise<{ status: number; body: string; head: string }> {
   const { hostname, port } = new URL(baseURL);
   return new Promise((resolve, reject) => {
     const socket = net.connect(Number(port), hostname, () => {
-      socket.write(`GET ${target} HTTP/1.1\r\nHost: ${hostname}\r\nConnection: close\r\n\r\n`);
+      socket.write(`${method} ${target} HTTP/1.1\r\nHost: ${hostname}\r\nConnection: close\r\n\r\n`);
     });
     let raw = '';
     socket.setEncoding('utf8');
     socket.on('data', chunk => (raw += chunk));
-    socket.on('end', () => resolve({ status: Number(raw.split(' ')[1]), body: raw.split('\r\n\r\n').slice(1).join('\r\n\r\n') }));
+    socket.on('end', () => resolve({ status: Number(raw.split(' ')[1]), head: raw.split('\r\n\r\n')[0].toLowerCase(), body: raw.split('\r\n\r\n').slice(1).join('\r\n\r\n') }));
     socket.on('error', reject);
   });
 }
@@ -95,6 +95,44 @@ test.describe('the running server', () => {
       expect((await rawGet(baseURL!, '/')).status).toBe(200);
     });
   }
+
+  // A symlinked DIRECTORY inside the demo folder: the last path component is a real file, so only the real-path check
+  // (not O_NOFOLLOW, which looks at the last component) can refuse it.
+  test('a file reached through a symlinked directory outside the demo folder gets 403', async ({ baseURL }) => {
+    const link = path.join(ROOT, '__link-dir');
+    // Remove only the link itself, never what it points to (rmdir on a junction, unlink on a symlink).
+    const removeLink = () => { try { fs.lstatSync(link); } catch { return; } if (process.platform === 'win32') fs.rmdirSync(link); else fs.unlinkSync(link); };
+    removeLink();
+    try {
+      fs.symlinkSync(path.join(ROOT, '..'), link, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (e: any) {
+      test.skip(e.code === 'EPERM', 'this machine does not allow symlinks for this user');
+      throw e;
+    }
+    try {
+      const r = await rawGet(baseURL!, '/__link-dir/package.json');
+      expect(r.status).toBe(403);
+      expect(r.body).not.toContain('planner-e2e-showcase');
+    } finally {
+      removeLink();
+    }
+  });
+
+  test('methods other than GET and HEAD get 405 with an Allow header', async ({ baseURL }) => {
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+      const r = await rawGet(baseURL!, '/', method);
+      expect(r.status, method).toBe(405);
+      expect(r.head, method).toContain('allow: get, head');
+    }
+  });
+
+  test('served files carry X-Content-Type-Options: nosniff', async ({ baseURL }) => {
+    for (const target of ['/', '/trip.json']) {
+      const r = await rawGet(baseURL!, target);
+      expect(r.status, target).toBe(200);
+      expect(r.head, target).toContain('x-content-type-options: nosniff');
+    }
+  });
 
   test('a sibling-prefix path gets 403', async ({ baseURL }) => {
     expect((await rawGet(baseURL!, '/..%2f' + path.basename(ROOT) + '-private%2fsecret.txt')).status).toBe(403);

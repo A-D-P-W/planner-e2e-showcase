@@ -44,31 +44,33 @@ function insideRoot(real) {
   return rel !== '' && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel);
 }
 
+const send = (res, status, body, extra) => res.writeHead(status, { 'Content-Type': 'text/plain', 'X-Content-Type-Options': 'nosniff', ...extra }).end(body);
+// The file is opened ONCE and the containment check runs on the opened descriptor, so a path swapped after the check
+// cannot change what is read (the old realpath-then-readFile pair read whatever the path named at read time).
+//   Linux: /proc/self/fd/<fd> names the file that was actually opened.
+//   elsewhere: realpath after open, then fstat and stat of that real path must be the same inode (dev+ino); a swap
+//   between open and the check makes them differ and the request gets 403. [HYPOTHESIS on Windows: ino from fs.stat is
+//   the NTFS file index; not driven here]
 function handle(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
   const { status, file } = resolveRequest(req.url);
-  if (status !== 200) {
-    res.writeHead(status, { 'Content-Type': 'text/plain' }).end(status === 400 ? 'Bad request' : 'Forbidden');
-    return;
-  }
-  fs.realpath(file, (err, real) => {
-    if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
-      return;
-    }
-    if (!insideRoot(real)) {
-      res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
-      return;
-    }
-    fs.readFile(real, (err2, data) => {
-      if (err2) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
-        return;
-      }
-      res.writeHead(200, {
-        'Content-Type': TYPES[path.extname(real)] || 'application/octet-stream',
-        'Cache-Control': 'no-store',
-      });
-      res.end(data);
+  if (status !== 200) return send(res, status, status === 400 ? 'Bad request' : 'Forbidden');
+  fs.open(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0), (err, fd) => {
+    if (err) return send(res, err.code === 'ELOOP' ? 403 : 404, err.code === 'ELOOP' ? 'Forbidden' : 'Not found');
+    const done = (code, body, headers) => fs.close(fd, () => (headers ? res.writeHead(code, headers).end(body) : send(res, code, body)));
+    let real, st;
+    try {
+      st = fs.fstatSync(fd);
+      if (!st.isFile()) return done(404, 'Not found');
+      if (process.platform === 'linux') real = fs.realpathSync('/proc/self/fd/' + fd);
+      else { real = fs.realpathSync(file); const s2 = fs.statSync(real); if (s2.dev !== st.dev || s2.ino !== st.ino) return done(403, 'Forbidden'); }
+    } catch (e) { return done(404, 'Not found'); }
+    if (!insideRoot(real)) return done(403, 'Forbidden');
+    const data = Buffer.alloc(st.size);
+    fs.read(fd, data, 0, st.size, 0, (err2, n) => {
+      if (err2) return done(404, 'Not found');
+      done(200, req.method === 'HEAD' ? undefined : data.subarray(0, n), { 'Content-Type': TYPES[path.extname(real)] || 'application/octet-stream',
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     });
   });
 }
