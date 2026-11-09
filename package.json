@@ -10,7 +10,7 @@
     "report": "playwright show-report",
     "mutants": "node scripts/mutants.js"
   },
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
     "@playwright/test": "^1.64.0",
