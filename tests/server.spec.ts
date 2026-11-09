@@ -202,13 +202,25 @@ test.describe('the handler reads the file it checked', () => {
   test('a file replaced right after the check is not what gets served', async () => {
     fs.writeFileSync(file, 'CHECKED-FILE'); fs.writeFileSync(decoy, 'SWAPPED-IN!!');   // same length: no short read
     const real = nodeFs.realpathSync;
-    let swapped = false;
-    nodeFs.realpathSync = (...a: any[]) => { const r = real(...a); nodeFs.realpathSync = real; fs.renameSync(decoy, file); swapped = true; return r; };
+    // swapped: the replace succeeded inside the handler. refused: the OS would not replace the open file (Windows).
+    let swapped = false, refused = '';
+    nodeFs.realpathSync = (...a: any[]) => {
+      const r = real(...a); nodeFs.realpathSync = real;
+      try { fs.renameSync(decoy, file); swapped = true; } catch (e: any) { refused = e.code; }
+      return r;
+    };
     try {
       const r = await call(`/__swap-test-${process.pid}.json`);
-      expect(swapped).toBe(true); // the swap happened inside the handler, so the test can fail
       expect(r.body).not.toContain('SWAPPED-IN');
-      expect(process.platform === 'linux' ? r : r.status).toEqual(process.platform === 'linux' ? { status: 200, body: 'CHECKED-FILE' } : 403);
+      if (process.platform === 'win32') {
+        // Windows refuses to replace a file another handle has open, so the swap cannot land after the open.
+        expect(swapped).toBe(false);
+        expect(['EPERM', 'EACCES', 'EBUSY']).toContain(refused);
+        expect(r).toEqual({ status: 200, body: 'CHECKED-FILE' });
+      } else {
+        expect(swapped).toBe(true); // the swap happened inside the handler, so the test can fail
+        expect(process.platform === 'linux' ? r : r.status).toEqual(process.platform === 'linux' ? { status: 200, body: 'CHECKED-FILE' } : 403);
+      }
     } finally { nodeFs.realpathSync = real; }
   });
 

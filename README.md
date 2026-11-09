@@ -82,9 +82,9 @@ environment cannot count as a caught bug. It exits 1 if any bug gets through, an
   opened once and the check runs on the opened file, so swapping the path for a link after the check cannot change what
   is read. A round-3 red-team review leaked an outside file in 295 of 4000 requests with the old check-then-read code;
   the new code leaked 0 of 8000 on Linux. On Windows and macOS (no `/proc`) the check compares the opened file's
-  identity with its real path's instead. A test now swaps the file right after the check and confirms the swapped file is not served; on
-  Linux that covers the descriptor check. A one-off forced test once reported leaks on the Windows and macOS path; later
-  runs (12,000 requests) found none, and no test in this repository forces that path, so treat it as unmeasured.
+  identity with its real path's instead. A test swaps the file right after the check and confirms the swapped file is not served. On Linux
+  that covers the descriptor check. On Windows 11 the same test shows the swap cannot land: Windows refuses to replace a
+  file that the server has open, and the original file is served. macOS is not tested, so treat that path as unmeasured.
   A hard link is not a path trick: its real path is inside `demo/`, so the server refuses any file with more than one
   link, which also refuses legitimately hard-linked copies.
 - **No traffic leaves the machine.** A test records every request and every WebSocket connection the app opens, and
