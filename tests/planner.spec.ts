@@ -1,10 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import * as fs from 'fs';
-import * as path from 'path';
-
-// The fixture the demo app loads. Tests read the same file, so a change to the trip changes the expectations with it.
-type Trip = { title: string; start: string; days: { title: string; items: string[] }[]; checklist: { id: string; text: string }[] };
-const trip: Trip = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'demo', 'trip.json'), 'utf-8'));
+import { trip, expectedLabel } from './trip';
 
 // The browser runs in America/Los_Angeles (playwright.config.ts). The fixture trip runs from Mon 28 Oct to Wed 13 Nov
 // 2030 and crosses the end of daylight saving time (Sun 3 Nov 2030, 02:00 PDT -> 01:00 PST), so the instants below
@@ -16,15 +11,6 @@ async function open(page: Page, at: string = DURING_TRIP) {
   await page.clock.setFixedTime(new Date(at));
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 2 })).toBeVisible();
-}
-
-// Expected labels are computed here in UTC from the fixture's start date, independent of the app's own date code
-// and of the machine's time zone.
-function expectedLabel(n: number): string {
-  const [y, m, d] = trip.start.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n - 1)).toLocaleDateString('en-US', {
-    timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
-  });
 }
 
 test.describe('loading', () => {
@@ -98,27 +84,10 @@ test.describe('Full plan view', () => {
     await page.getByRole('button', { name: 'Full plan' }).click();
   });
 
-  test(`lists all ${trip.days.length} days`, async ({ page }) => {
-    expect(trip.days.length).toBe(17); // the fixture itself: a trip shortened by mistake would pass the next line
-    await expect(page.getByRole('button', { name: /^Day \d+ · / })).toHaveCount(trip.days.length);
-  });
-
-  // Anchors checked against an external calendar, so a wrong expectedLabel() cannot hide a wrong app label.
-  for (const [n, text] of [[1, 'Mon, Oct 28'], [7, 'Sun, Nov 3'], [8, 'Mon, Nov 4'], [17, 'Wed, Nov 13']] as const) {
-    test(`anchor: Day ${n} is ${text}`, async () => {
-      expect(expectedLabel(n)).toBe(text);
-    });
-  }
-
-  for (let n = 1; n <= trip.days.length; n++) {
-    test(`Day ${n} is labeled ${expectedLabel(n)}`, async ({ page }) => {
-      await expect(page.getByRole('button', { name: `Day ${n} · ${expectedLabel(n)}`, exact: true })).toBeVisible();
-    });
-  }
-
-  test('no date repeats or is skipped across the clock change', async ({ page }) => {
-    const labels = await page.getByRole('button', { name: /^Day \d+ · / }).allTextContents();
-    expect(labels).toEqual(trip.days.map((_, i) => `Day ${i + 1} · ${expectedLabel(i + 1)}`));
+  // One web-first assertion: it retries until the buttons match, and checks the count, the order and every label
+  // (a missing, extra, reordered or mislabeled day each fails it, and the diff names the day).
+  test('lists every day in order with its date, with no date repeated or skipped across the clock change', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /^Day \d+ · / })).toHaveText(trip.days.map((_, i) => `Day ${i + 1} · ${expectedLabel(i + 1)}`));
   });
 
   test('a day opens and closes', async ({ page }) => {

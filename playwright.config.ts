@@ -18,11 +18,11 @@ export default defineConfig({
     serviceWorkers: 'block',
   },
   projects: [
-    // The server's input-handling tests need no browser, so they run once, in their own project.
-    { name: 'server', testMatch: /server\.spec\.ts/ },
-    { name: 'chromium', testIgnore: /server\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', testIgnore: /server\.spec\.ts/, use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit', testIgnore: /server\.spec\.ts/, use: { ...devices['Desktop Safari'] } },
+    // The server's input-handling tests and the fixture/helper checks need no browser, so they run once, in their own project.
+    { name: 'server', testMatch: /(server|fixture)\.spec\.ts/ },
+    { name: 'chromium', testIgnore: /(server|fixture)\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', testIgnore: /(server|fixture)\.spec\.ts/, use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', testIgnore: /(server|fixture)\.spec\.ts/, use: { ...devices['Desktop Safari'] } },
   ],
   // Serve ./demo before the tests and stop it afterwards, so the suite does not depend on a deployed site.
   webServer: {

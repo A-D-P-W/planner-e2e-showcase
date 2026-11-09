@@ -12,3 +12,5 @@ demo/__link-test.json
 demo/__link-dir
 demo/__hard-test.json
 demo/__fifo-test.json
+demo/__swap-test-*.json
+demo/__swap-decoy-*.json

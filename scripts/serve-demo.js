@@ -84,4 +84,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { resolveRequest, insideRoot, ROOT };
+module.exports = { resolveRequest, insideRoot, ROOT, handle };

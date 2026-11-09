@@ -6,7 +6,7 @@ import * as path from 'path';
 // The demo server's own input handling. These tests need no browser, so they run once, in the "server" project.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 // SERVE_DEMO: scripts/mutants.js points this (and the web server) at a mutated copy of the server.
-const { resolveRequest, insideRoot, ROOT } = require(process.env.SERVE_DEMO ? path.resolve(process.env.SERVE_DEMO) : '../scripts/serve-demo.js');
+const { resolveRequest, insideRoot, ROOT, handle } = require(process.env.SERVE_DEMO ? path.resolve(process.env.SERVE_DEMO) : '../scripts/serve-demo.js');
 
 // Sends a request target exactly as written. A browser or an HTTP client would re-encode or normalise it first,
 // which is the point of the attack inputs below, so these go over a raw socket.
@@ -31,6 +31,7 @@ test.describe('symlink containment', () => {
     expect(insideRoot(path.join(real, '..', 'package.json'))).toBe(false);
     expect(insideRoot(real + '-private' + path.sep + 'x.json')).toBe(false);
     expect(insideRoot(real)).toBe(false);
+    expect(insideRoot(path.dirname(real))).toBe(false);
   });
 });
 
@@ -59,14 +60,23 @@ test.describe('request path handling', () => {
     expect(resolveRequest('/..%2f' + sibling + '%2fsecret.txt')).toEqual({ status: 403 });
   });
 
-  test('no hostile path resolves to a file outside the demo folder', () => {
-    const hostile = ['/../package.json', '/%2e%2e/package.json', '/..%2fpackage.json', '/..%5cpackage.json',
-      '/%2e%2e%2f%2e%2e%2fetc/passwd', '/....//package.json', '/%252e%252e%252fpackage.json', '//etc/passwd'];
-    for (const target of hostile) {
-      const r = resolveRequest(target);
-      if (r.status === 200) expect(r.file.startsWith(ROOT + path.sep), target).toBe(true);
-    }
-  });
+  // Each hostile target with its stated result (status, and for a 200 the exact file), not the code's own predicate.
+  const inDemo = (rel: string) => ({ status: 200, file: path.join(ROOT, rel) });
+  const hostile: [string, object][] = [
+    ['/../package.json', inDemo('package.json')],                 // the URL parser removes the dot segment first
+    ['/%2e%2e/package.json', inDemo('package.json')],             // same: %2e%2e is a dot segment to the URL parser
+    ['/..%2fpackage.json', { status: 403 }],
+    ['/..%5cpackage.json', process.platform === 'win32' ? { status: 403 } : inDemo('..\\package.json')],
+    ['/%2e%2e%2f%2e%2e%2fetc/passwd', { status: 403 }],
+    ['/....//package.json', inDemo('..../package.json')],
+    ['/%252e%252e%252fpackage.json', inDemo('%2e%2e%2fpackage.json')], // decoded once, never twice
+    ['//etc/passwd', inDemo('passwd')],                            // "//etc" is a host to the URL parser
+  ];
+  for (const [target, expected] of hostile) {
+    test(`hostile path ${target} gets its stated result`, () => {
+      expect(resolveRequest(target)).toEqual(expected);
+    });
+  }
 });
 
 test.describe('the running server', () => {
@@ -163,13 +173,50 @@ test.describe('the running server', () => {
     }
   });
 
-  test('a sibling-prefix path gets 403', async ({ baseURL }) => {
-    expect((await rawGet(baseURL!, '/..%2f' + path.basename(ROOT) + '-private%2fsecret.txt')).status).toBe(403);
+  test('served files carry the Content-Type of their extension', async ({ baseURL }) => {
+    for (const [target, type] of [['/', 'text/html; charset=utf-8'], ['/trip.json', 'application/json; charset=utf-8']]) {
+      expect((await rawGet(baseURL!, target)).head, target).toContain('content-type: ' + type);
+    }
   });
 
   test('an encoded "../" gets 403 and no file contents', async ({ baseURL }) => {
     const r = await rawGet(baseURL!, '/..%2fpackage.json');
     expect(r.status).toBe(403);
     expect(r.body).not.toContain('planner-e2e-showcase');
+  });
+});
+// In-process: one fs call is wrapped so that a change lands at an exact point between the containment check and the
+// read. No timing, no retries: the same interleaving every run.
+test.describe('the handler reads the file it checked', () => {
+  const call = (url: string): Promise<{ status: number; body: string }> => new Promise(resolve => {
+    const res: any = { writeHead(code: number) { this.code = code; return this; }, end(b?: any) { resolve({ status: this.code, body: b ? String(b) : '' }); } };
+    handle({ method: 'GET', url }, res);
+  });
+  // the fs module object the server holds (a TypeScript `import * as fs` is a copy, so patching it would change nothing)
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodeFs = require('fs');
+  // Per-process names: parallel workers each get their own pair, so one test's swap never touches another's file.
+  const file = path.join(ROOT, `__swap-test-${process.pid}.json`), decoy = path.join(ROOT, `__swap-decoy-${process.pid}.json`);
+  test.afterEach(() => { fs.rmSync(file, { force: true }); fs.rmSync(decoy, { force: true }); });
+
+  test('a file replaced right after the check is not what gets served', async () => {
+    fs.writeFileSync(file, 'CHECKED-FILE'); fs.writeFileSync(decoy, 'SWAPPED-IN!!');   // same length: no short read
+    const real = nodeFs.realpathSync;
+    let swapped = false;
+    nodeFs.realpathSync = (...a: any[]) => { const r = real(...a); nodeFs.realpathSync = real; fs.renameSync(decoy, file); swapped = true; return r; };
+    try {
+      const r = await call(`/__swap-test-${process.pid}.json`);
+      expect(swapped).toBe(true); // the swap happened inside the handler, so the test can fail
+      expect(r.body).not.toContain('SWAPPED-IN');
+      expect(process.platform === 'linux' ? r : r.status).toEqual(process.platform === 'linux' ? { status: 200, body: 'CHECKED-FILE' } : 403);
+    } finally { nodeFs.realpathSync = real; }
+  });
+
+  test('a read shorter than the size from fstat gets 500, not a truncated 200', async () => {
+    fs.writeFileSync(file, 'TWELVE-BYTES');
+    const read = nodeFs.read;
+    nodeFs.read = (fd: number, buf: Buffer, off: number, len: number, pos: number, cb: any) => read(fd, buf, off, len - 1, pos, cb);
+    try { expect(await call(`/__swap-test-${process.pid}.json`)).toEqual({ status: 500, body: 'File changed while reading' }); }
+    finally { nodeFs.read = read; }
   });
 });

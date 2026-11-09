@@ -12,11 +12,11 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 |---|---|
 | Loading | The title names the trip. A failed fixture load (HTTP 500) shows an error message instead of an empty page. The app makes no requests outside the local demo server. A trip file full of markup shows as literal text in every view, and its script never runs. |
 | Today view | Eight frozen clock instants give the expected heading: before the trip, the day before ("1 day", singular), first day, both sides of the clock change, the last minute of the trip, and after it. One more test checks that day's items. |
-| Full plan view | All 17 days are listed. Each day has the expected weekday and date (17 generated tests). No date repeats or is skipped. A day opens and closes. |
+| Full plan view | One check covers the whole list: 17 days, in order, each with the expected weekday and date, so no date repeats or is skipped. A day opens and closes. |
 | List view | Every checklist item is shown, unticked at first. A ticked item stays ticked after a reload, and the other items stay unticked. |
-| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. A hard link inside `demo/` to a file outside it gets 403, and a named pipe (FIFO) gets 404 without tying up the server. Methods other than GET and HEAD get 405, HEAD returns the size without reading the file, and served files carry `X-Content-Type-Options: nosniff`. |
+| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. A hard link inside `demo/` to a file outside it gets 403, and a named pipe (FIFO) gets 404 without tying up the server. Eight more hostile paths (encoded, double-encoded, backslash, doubled-slash forms) each get a result written in the test. Methods other than GET and HEAD get 405, HEAD returns the size without reading the file, and served files carry `X-Content-Type-Options: nosniff` and the Content-Type of their extension. A file replaced right after the check is not what gets served, and a read shorter than the file's size gets 500 instead of a truncated 200. |
 
-39 tests per browser, plus 18 server tests that need no browser and run once: 135 in all (the FIFO test is skipped on Windows).
+17 tests per browser, plus 32 tests that need no browser and run once (server tests, the fixture pin and the four calendar anchors): 83 in all (the FIFO test is skipped on Windows).
 
 ## How the tests are built
 
@@ -27,8 +27,8 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
   day is 25 hours long. Code that adds 24 hours per day instead of stepping the calendar shows a wrong date from Day 8 on.
   The clock instants in the tests carry explicit UTC offsets on both sides of the change.
 - **Expected values do not come from the app.** Expected dates are computed in the test process, in UTC, from the
-  fixture's start date. Four anchors (Day 1, 7, 8, 17) are hardcoded from an external calendar, so a bug in that helper
-  cannot hide a bug in the app.
+  fixture's start date. Four anchors (Day 1, 7, 8, 17) are hardcoded from an external calendar and checked once, without a
+  browser, so a bug in that helper cannot hide a bug in the app.
 - **One fixture, two readers.** The app loads `demo/trip.json` over HTTP, and the tests read the same file. A change to
   the trip changes the expectations with it. A separate check pins the fixture at 17 days, so a trip shortened by
   mistake fails.
@@ -40,23 +40,31 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 `npm run mutants` (`scripts/mutants.js`) plants each bug below and runs the tests against it: app bugs in a copy of
 `demo/index.html` with the Chromium suite, server bugs in a git-ignored copy of `scripts/serve-demo.js` with the server
 tests (the tracked file is never written). Both suites first run on the unmutated code and must pass, so a broken
-environment cannot count as a caught bug. It exits 1 if any bug gets through, and CI runs it on every push. Each bug is caught (counts from the Linux CI run):
+environment cannot count as a caught bug. It exits 1 if any bug gets through, and CI runs it on every push. Each bug is caught (counts from a Linux run):
 
 | Bug introduced | Tests that failed |
 |---|---|
-| Full plan steps 24 hours per day instead of one calendar day | 11 of 39: Day 8 to Day 17 labels, and "no date repeats or is skipped" |
-| Today view takes the time elapsed since local midnight on Day 1, divides it by 24 hours and rounds down, instead of counting calendar days | 2 of 39: 23:30 on the 25-hour day, and the last minute of the trip |
-| The ticked checklist item is not saved | 1 of 39: "a ticked item stays ticked after a reload" |
-| Day items are written with `innerHTML` instead of as text | 1 of 39: "markup in the trip data is shown as text and never runs" |
-| Server: malformed percent-encoding throws instead of returning 400 | 9 of 18 server tests (the crash also fails the tests that follow it) |
-| Server: no null-byte check | 8 of 18 |
-| Server: join + normalize instead of resolve, so a decoded `../` is clamped and the folder check never fires | 4 of 18 |
-| Server: folder check without the path separator, so a sibling such as `demo-private` passes | 2 of 18 |
-| Server: no check after following symlinks, so a link inside `demo/` that points outside it is served | 1 of 18 |
-| Server: no link-count check, so a hard link inside `demo/` to an outside file is served | 1 of 18 |
-| Server: blocking open, so a FIFO inside `demo/` holds a thread until a writer appears (Linux and macOS only) | 1 of 18 |
-| Server: every HTTP method is served, not only GET and HEAD | 1 of 18 |
-| Server: no `X-Content-Type-Options: nosniff` on served files | 1 of 18 |
+| Full plan steps 24 hours per day instead of one calendar day | 1 of 17: the ordered day list |
+| Full plan lists the days in reverse order | 1 of 17: the ordered day list |
+| Today view takes the time elapsed since local midnight on Day 1, divides it by 24 hours and rounds down, instead of counting calendar days | 2 of 17: 23:30 on the 25-hour day, and the last minute of the trip |
+| The ticked checklist item is not saved | 1 of 17: "a ticked item stays ticked after a reload" |
+| Day items are written with `innerHTML` instead of as text | 1 of 17: "markup in the trip data is shown as text and never runs" |
+| Server: malformed percent-encoding throws instead of returning 400 | 9 of 32 browserless tests (the crash also fails the tests that follow it) |
+| Server: no null-byte check | 8 of 32 |
+| Server: join + normalize instead of resolve, so a decoded `../` is clamped and the folder check never fires | 5 of 32 |
+| Server: the path is percent-decoded twice, so `%252e%252e%252f` becomes `../` | 1 of 32 |
+| Server: folder check without the path separator, so a sibling such as `demo-private` passes | 1 of 32 |
+| Server: the containment check counts the demo folder itself as inside it | 1 of 32 |
+| Server: the containment check counts the parent folder as inside | 1 of 32 |
+| Server: the containment check counts `../<file>` as inside | 2 of 32 |
+| Server: no check after following symlinks, so a link inside `demo/` that points outside it is served | 1 of 32 |
+| Server: no link-count check, so a hard link inside `demo/` to an outside file is served | 1 of 32 |
+| Server: the file is read again by path, not from the descriptor that was checked | 2 of 32 |
+| Server: a short read is served as a truncated 200, not a 500 | 1 of 32 |
+| Server: blocking open, so a FIFO inside `demo/` holds a thread until a writer appears (Linux and macOS only) | 1 of 32 |
+| Server: every HTTP method is served, not only GET and HEAD | 1 of 32 |
+| Server: no `X-Content-Type-Options: nosniff` on served files | 1 of 32 |
+| Server: every file is served as `text/html` | 1 of 32 |
 
 ## Security-relevant properties
 
@@ -74,8 +82,9 @@ environment cannot count as a caught bug. It exits 1 if any bug gets through, an
   opened once and the check runs on the opened file, so swapping the path for a link after the check cannot change what
   is read. A round-3 red-team review leaked an outside file in 295 of 4000 requests with the old check-then-read code;
   the new code leaked 0 of 8000 on Linux. On Windows and macOS (no `/proc`) the check compares the opened file's
-  identity with its real path's instead. A one-off forced test once reported leaks on that path; later runs (12,000
-  requests) found none, and no test in this repository measures it, so treat that path as unmeasured.
+  identity with its real path's instead. A test now swaps the file right after the check and confirms the swapped file is not served; on
+  Linux that covers the descriptor check. A one-off forced test once reported leaks on the Windows and macOS path; later
+  runs (12,000 requests) found none, and no test in this repository forces that path, so treat it as unmeasured.
   A hard link is not a path trick: its real path is inside `demo/`, so the server refuses any file with more than one
   link, which also refuses legitimately hard-linked copies.
 - **No traffic leaves the machine.** A test records every request and every WebSocket connection the app opens, and
@@ -100,7 +109,7 @@ npm test
 | `npm run test:chromium` | Runs the suite in Chromium only |
 | `npm run demo` | Serves the demo app at http://127.0.0.1:4173/ |
 | `npm run report` | Opens the HTML report from the last run |
-| `npm run mutants` | Runs the Chromium suite against each deliberately broken copy of the app |
+| `npm run mutants` | Runs the Chromium suite against each broken copy of the app, and the browserless tests against each broken copy of the server |
 
 GitHub Actions (`.github/workflows/playwright.yml`) runs the suite in all three browsers, then the mutants, on every push and pull
 request to `main`, and saves the HTML report with each run. The actions are pinned by commit.

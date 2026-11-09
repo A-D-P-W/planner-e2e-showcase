@@ -36,8 +36,18 @@ const APP_MUTANTS = [
     from: "items.map(t => el('li', {}, t))",
     to: "items.map(t => { const li = el('li', {}); li.innerHTML = t; return li; })",
   },
+  {
+    name: 'Full plan lists the days in reverse order',
+    from: 'replaceChildren(...views[name]())',
+    to: "replaceChildren(...(name === 'plan' ? views[name]().reverse() : views[name]()))",
+  },
 ];
 const SERVER_MUTANTS = [
+  {
+    name: 'Server: the path is percent-decoded twice (%252e%252e%252f becomes ../)',
+    from: "decodeURIComponent(new URL(rawUrl, 'http://localhost').pathname)",
+    to: "decodeURIComponent(decodeURIComponent(new URL(rawUrl, 'http://localhost').pathname))",
+  },
   {
     name: 'Server: malformed percent-encoding throws instead of returning 400',
     from: '  } catch (e) {\n    return { status: 400 };\n  }',
@@ -83,6 +93,36 @@ const SERVER_MUTANTS = [
     name: 'Server: no X-Content-Type-Options: nosniff on served files',
     from: "'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }",
     to: "'Cache-Control': 'no-store' }",
+  },
+  {
+    name: 'Server: every file is served as text/html',
+    from: "TYPES[path.extname(real)] || 'application/octet-stream'",
+    to: "'text/html; charset=utf-8'",
+  },
+  {
+    name: 'Server: the containment check counts the demo folder itself as inside it',
+    from: "return rel !== '' && rel !== '..'",
+    to: "return rel !== '..'",
+  },
+  {
+    name: 'Server: the containment check counts the parent folder as inside',
+    from: "rel !== '' && rel !== '..' &&",
+    to: "rel !== '' &&",
+  },
+  {
+    name: 'Server: the containment check counts ../<file> as inside',
+    from: " && !rel.startsWith('..' + path.sep)",
+    to: '',
+  },
+  {
+    name: 'Server: the file is read again by path, not from the descriptor that was checked',
+    from: 'fs.read(fd, data, 0, st.size, 0, (err2, n) => {',
+    to: 'fs.readFile(file, (err2, buf) => { const n = buf ? buf.copy(data) : 0;',
+  },
+  {
+    name: 'Server: a short read is served as a truncated 200, not a 500',
+    from: 'if (n !== st.size) return done(500',
+    to: 'if (false) return done(500',
   },
 ];
 
