@@ -14,7 +14,7 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 | Today view | Eight frozen clock instants give the expected heading: before the trip, the day before ("1 day", singular), first day, both sides of the clock change, the last minute of the trip, and after it. One more test checks that day's items. |
 | Full plan view | One check covers the whole list: 17 days, in order, each with the expected weekday and date, so no date repeats or is skipped. A day opens and closes. |
 | List view | Every checklist item is shown, unticked at first. A ticked item stays ticked after a reload, and the other items stay unticked. |
-| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. An encoded `../` gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. A hard link inside `demo/` to a file outside it gets 403, and a named pipe (FIFO) gets 404 without tying up the server. Eight more hostile paths (encoded, double-encoded, backslash, doubled-slash forms) each get a result written in the test. Methods other than GET and HEAD get 405, HEAD returns the size without reading the file, and served files carry `X-Content-Type-Options: nosniff` and the Content-Type of their extension. A file replaced right after the check is not what gets served, and a read shorter than the file's size gets 500 instead of a truncated 200. |
+| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. `/..%2f` (an encoded slash after `..`) gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. A hard link inside `demo/` to a file outside it gets 403, and a named pipe (FIFO) gets 404 without tying up the server. Eight more hostile paths (encoded, double-encoded, backslash, doubled-slash forms) each get a result written in the test. Methods other than GET and HEAD get 405, HEAD returns the size without reading the file, and served files carry `X-Content-Type-Options: nosniff` and the Content-Type of their extension. A file replaced right after the check is not what gets served, and a read shorter than the file's size gets 500 instead of a truncated 200. |
 
 17 tests per browser, plus 32 tests that need no browser and run once (server tests, the fixture pin and the four calendar anchors): 83 in all (the FIFO test is skipped on Windows).
 
@@ -75,7 +75,7 @@ environment cannot count as a caught bug. It exits 1 if any bug gets through, an
   and each one is caught (table above).
 - **No file outside `demo/` is served.** The old code joined and normalised the path, which quietly clamped a decoded
   `../` back to the demo folder, so its "outside the folder" check could never fire. The path is now resolved, an
-  encoded `../` reaches the check and gets 403. A second test uses a sibling folder with the same name prefix
+  encoded slash after `..` (`/..%2f`) reaches the check and gets 403. A second test uses a sibling folder with the same name prefix
   (`demo-private`), which a check without the path separator would serve. Both expected statuses are written in the tests,
   not computed from the code under test. The path is checked again after following symlinks, so a link inside `demo/`
   that points outside it gets 403; tests make a file link and a directory link at run time and request them. The file is
@@ -98,15 +98,17 @@ environment cannot count as a caught bug. It exits 1 if any bug gets through, an
 
 ## Run it locally
 
+Requires Node (CI uses Node 24).
+
 ```
 npm ci
-npx playwright install
-npm test
+npx playwright install --with-deps   # Linux: also installs system libraries (needs root); omit --with-deps on macOS and Windows
+npm test                             # needs port 4173 free: a server already listening there is reused, not restarted
 ```
 
 | Command | What it does |
 |---|---|
-| `npm run test:chromium` | Runs the suite in Chromium only |
+| `npm run test:chromium` | Runs the browser tests in Chromium only (not the browserless server tests) |
 | `npm run demo` | Serves the demo app at http://127.0.0.1:4173/ |
 | `npm run report` | Opens the HTML report from the last run |
 | `npm run mutants` | Runs the Chromium suite against each broken copy of the app, and the browserless tests against each broken copy of the server |
