@@ -120,6 +120,26 @@ const SERVER_MUTANTS = [
     to: 'fs.readFile(file, (err2, buf) => { const n = buf ? buf.copy(data) : 0;',
   },
   {
+    name: 'Server: a missing file gets 403 instead of 404',
+    from: "send(res, err.code === 'ELOOP' ? 403 : 404, err.code === 'ELOOP' ? 'Forbidden' : 'Not found')",
+    to: "send(res, 403, 'Forbidden')",
+  },
+  {
+    name: 'Server: an fstat or realpath error is swallowed instead of returning 404',
+    from: "} catch (e) { return done(404, 'Not found'); }",
+    to: '} catch (e) { }',
+  },
+  {
+    name: 'Server: a read error is ignored instead of returning 404',
+    from: "if (err2) return done(404, 'Not found');",
+    to: "if (false) return done(404, 'Not found');",
+  },
+  {
+    name: 'Server: HEAD reads the whole file instead of answering from fstat',
+    from: "if (req.method === 'HEAD') return done(200",
+    to: 'if (false) return done(200',
+  },
+  {
     name: 'Server: a short read is served as a truncated 200, not a 500',
     from: 'if (n !== st.size) return done(500',
     to: 'if (false) return done(500',

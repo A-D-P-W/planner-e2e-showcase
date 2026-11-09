@@ -14,9 +14,9 @@ here is invented: Example Island, 28 October to 13 November 2030, with placehold
 | Today view | Eight frozen clock instants give the expected heading: before the trip, the day before ("1 day", singular), first day, both sides of the clock change, the last minute of the trip, and after it. One more test checks that day's items. |
 | Full plan view | One check covers the whole list: 17 days, in order, each with the expected weekday and date, so no date repeats or is skipped. A day opens and closes. |
 | List view | Every checklist item is shown, unticked at first. A ticked item stays ticked after a reload, and the other items stay unticked. |
-| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. `/..%2f` (an encoded slash after `..`) gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. A hard link inside `demo/` to a file outside it gets 403, and a named pipe (FIFO) gets 404 without tying up the server. Eight more hostile paths (encoded, double-encoded, backslash, doubled-slash forms) each get a result written in the test. Methods other than GET and HEAD get 405, HEAD returns the size without reading the file, and served files carry `X-Content-Type-Options: nosniff` and the Content-Type of their extension. A file replaced right after the check is not what gets served, and a read shorter than the file's size gets 500 instead of a truncated 200. |
+| Demo server | A request with malformed percent-encoding or a null byte gets 400, and the server keeps serving. `/..%2f` (an encoded slash after `..`) gets 403 and no file contents, and so does a sibling folder whose name starts with `demo` (`demo-private`). A symlink inside `demo/` that leads outside it, as a file or as a directory, gets 403. A hard link inside `demo/` to a file outside it gets 403, and a named pipe (FIFO) gets 404 without tying up the server. Eight more hostile paths (encoded, double-encoded, backslash, doubled-slash forms) each get a result written in the test. Methods other than GET and HEAD get 405, HEAD returns the size without reading the file, and served files carry `X-Content-Type-Options: nosniff` and the Content-Type of their extension. A file replaced right after the check is not what gets served, and a read shorter than the file's size gets 500 instead of a truncated 200. A missing file gets 404 (not 403), an fstat error after the open and a read error each get 404, and HEAD answers from fstat without reading the file. |
 
-17 tests per browser, plus 32 tests that need no browser and run once (server tests, the fixture pin and the four calendar anchors): 83 in all (the FIFO test is skipped on Windows).
+17 tests per browser, plus 36 tests that need no browser and run once (server tests, the fixture pin and the four calendar anchors): 87 in all (the FIFO test is skipped on Windows).
 
 ## How the tests are built
 
@@ -49,22 +49,26 @@ environment cannot count as a caught bug. It exits 1 if any bug gets through, an
 | Today view takes the time elapsed since local midnight on Day 1, divides it by 24 hours and rounds down, instead of counting calendar days | 2 of 17: 23:30 on the 25-hour day, and the last minute of the trip |
 | The ticked checklist item is not saved | 1 of 17: "a ticked item stays ticked after a reload" |
 | Day items are written with `innerHTML` instead of as text | 1 of 17: "markup in the trip data is shown as text and never runs" |
-| Server: malformed percent-encoding throws instead of returning 400 | 9 of 32 browserless tests (the crash also fails the tests that follow it) |
-| Server: no null-byte check | 8 of 32 |
-| Server: join + normalize instead of resolve, so a decoded `../` is clamped and the folder check never fires | 5 of 32 |
-| Server: the path is percent-decoded twice, so `%252e%252e%252f` becomes `../` | 1 of 32 |
-| Server: folder check without the path separator, so a sibling such as `demo-private` passes | 1 of 32 |
-| Server: the containment check counts the demo folder itself as inside it | 1 of 32 |
-| Server: the containment check counts the parent folder as inside | 1 of 32 |
-| Server: the containment check counts `../<file>` as inside | 2 of 32 |
-| Server: no check after following symlinks, so a link inside `demo/` that points outside it is served | 1 of 32 |
-| Server: no link-count check, so a hard link inside `demo/` to an outside file is served | 1 of 32 |
-| Server: the file is read again by path, not from the descriptor that was checked | 2 of 32 |
-| Server: a short read is served as a truncated 200, not a 500 | 1 of 32 |
-| Server: blocking open, so a FIFO inside `demo/` holds a thread until a writer appears (Linux and macOS only) | 1 of 32 |
-| Server: every HTTP method is served, not only GET and HEAD | 1 of 32 |
-| Server: no `X-Content-Type-Options: nosniff` on served files | 1 of 32 |
-| Server: every file is served as `text/html` | 1 of 32 |
+| Server: malformed percent-encoding throws instead of returning 400 | 10 of 36 browserless tests (the crash also fails the tests that follow it) |
+| Server: no null-byte check | 9 of 36 |
+| Server: join + normalize instead of resolve, so a decoded `../` is clamped and the folder check never fires | 5 of 36 |
+| Server: the path is percent-decoded twice, so `%252e%252e%252f` becomes `../` | 1 of 36 |
+| Server: folder check without the path separator, so a sibling such as `demo-private` passes | 1 of 36 |
+| Server: the containment check counts the demo folder itself as inside it | 1 of 36 |
+| Server: the containment check counts the parent folder as inside | 1 of 36 |
+| Server: the containment check counts `../<file>` as inside | 2 of 36 |
+| Server: no check after following symlinks, so a link inside `demo/` that points outside it is served | 1 of 36 |
+| Server: no link-count check, so a hard link inside `demo/` to an outside file is served | 1 of 36 |
+| Server: the file is read again by path, not from the descriptor that was checked | 3 of 36 |
+| Server: a short read is served as a truncated 200, not a 500 | 1 of 36 |
+| Server: blocking open, so a FIFO inside `demo/` holds a thread until a writer appears (Linux and macOS only) | 1 of 36 |
+| Server: every HTTP method is served, not only GET and HEAD | 1 of 36 |
+| Server: no `X-Content-Type-Options: nosniff` on served files | 1 of 36 |
+| Server: every file is served as `text/html` | 1 of 36 |
+| Server: a missing file gets 403 instead of 404 | 1 of 36: "a file that does not exist gets 404, not 403" |
+| Server: an fstat or realpath error is swallowed instead of returning 404 | 1 of 36: "an fstat error after the open gets 404, not a crash" |
+| Server: a read error is ignored instead of returning 404 | 1 of 36: "a read error gets 404, not a 500 or a partial 200" |
+| Server: HEAD reads the whole file instead of answering from fstat | 1 of 36: "HEAD answers from fstat and never reads the file" |
 
 ## Security-relevant properties
 

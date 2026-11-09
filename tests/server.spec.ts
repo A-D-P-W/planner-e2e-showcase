@@ -158,6 +158,12 @@ test.describe('the running server', () => {
     }
   });
 
+  test('a file that does not exist gets 404, not 403', async ({ baseURL }) => {
+    const r = await rawGet(baseURL!, '/__no-such-file.json');
+    expect(r.status).toBe(404);
+    expect(r.body).toContain('Not found'); // the body is sent chunked, so it carries chunk-size lines
+  });
+
   test('HEAD gives the size and no body', async ({ baseURL }) => {
     const r = await rawGet(baseURL!, '/trip.json', 'HEAD');
     expect(r.status).toBe(200);
@@ -187,14 +193,14 @@ test.describe('the running server', () => {
 });
 // In-process: one fs call is wrapped so that a change lands at an exact point between the containment check and the
 // read. No timing, no retries: the same interleaving every run.
+const call = (url: string, method = 'GET'): Promise<{ status: number; body: string; headers?: any }> => new Promise(resolve => {
+  const res: any = { writeHead(code: number, headers?: any) { this.code = code; this.headers = headers; return this; }, end(b?: any) { resolve({ status: this.code, body: b ? String(b) : '', ...(method === 'HEAD' ? { headers: this.headers } : {}) }); } };
+  handle({ method, url }, res);
+});
+// the fs module object the server holds (a TypeScript `import * as fs` is a copy, so patching it would change nothing)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const nodeFs = require('fs');
 test.describe('the handler reads the file it checked', () => {
-  const call = (url: string): Promise<{ status: number; body: string }> => new Promise(resolve => {
-    const res: any = { writeHead(code: number) { this.code = code; return this; }, end(b?: any) { resolve({ status: this.code, body: b ? String(b) : '' }); } };
-    handle({ method: 'GET', url }, res);
-  });
-  // the fs module object the server holds (a TypeScript `import * as fs` is a copy, so patching it would change nothing)
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const nodeFs = require('fs');
   // Per-process names: parallel workers each get their own pair, so one test's swap never touches another's file.
   const file = path.join(ROOT, `__swap-test-${process.pid}.json`), decoy = path.join(ROOT, `__swap-decoy-${process.pid}.json`);
   test.afterEach(() => { fs.rmSync(file, { force: true }); fs.rmSync(decoy, { force: true }); });
@@ -230,5 +236,34 @@ test.describe('the handler reads the file it checked', () => {
     nodeFs.read = (fd: number, buf: Buffer, off: number, len: number, pos: number, cb: any) => read(fd, buf, off, len - 1, pos, cb);
     try { expect(await call(`/__swap-test-${process.pid}.json`)).toEqual({ status: 500, body: 'File changed while reading' }); }
     finally { nodeFs.read = read; }
+  });
+});
+// In-process: one fs call fails on purpose, so each error path runs with its stated status.
+test.describe('the handler error paths', () => {
+  test('an fstat error after the open gets 404, not a crash', async () => {
+    const fstat = nodeFs.fstatSync;
+    nodeFs.fstatSync = () => { nodeFs.fstatSync = fstat; throw Object.assign(new Error('injected EIO'), { code: 'EIO' }); };
+    try { expect(await call('/trip.json')).toEqual({ status: 404, body: 'Not found' }); }
+    finally { nodeFs.fstatSync = fstat; }
+  });
+
+  test('a read error gets 404, not a 500 or a partial 200', async () => {
+    const read = nodeFs.read;
+    nodeFs.read = (fd: number, buf: Buffer, off: number, len: number, pos: number, cb: any) => process.nextTick(cb, Object.assign(new Error('injected EIO'), { code: 'EIO' }));
+    try { expect(await call('/trip.json')).toEqual({ status: 404, body: 'Not found' }); }
+    finally { nodeFs.read = read; }
+  });
+
+  test('HEAD answers from fstat and never reads the file', async () => {
+    const read = nodeFs.read;
+    let reads = 0;
+    nodeFs.read = (...a: any[]) => { reads++; return read(...a); };
+    try {
+      const r = await call('/trip.json', 'HEAD');
+      expect(r.status).toBe(200);
+      expect(r.body).toBe('');
+      expect(r.headers['Content-Length']).toBe(fs.statSync(path.join(ROOT, 'trip.json')).size);
+      expect(reads).toBe(0);
+    } finally { nodeFs.read = read; }
   });
 });
