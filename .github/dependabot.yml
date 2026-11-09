@@ -1,14 +1,20 @@
 # Keeps the commit-pinned GitHub Actions current. Each update arrives as a pull request, which CI tests.
+# cooldown: wait 7 days after a release before proposing it, so a compromised or broken release has time to be caught
+# (zizmor dependabot-cooldown).
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     # One pull request for all npm updates, so CI (three browsers plus the mutants) runs once per month, not per package.
     groups:
       npm:
