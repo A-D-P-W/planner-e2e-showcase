@@ -119,5 +119,6 @@ npm test                             # needs port 4173 free: a server already li
 
 GitHub Actions (`.github/workflows/playwright.yml`) runs the suite in all three browsers, then the mutants, on every push and pull
 request to `main`, and saves the HTML report with each run. A second job runs the browserless server tests on Windows
-(`windows-2025`) and macOS (`macos-15`), where the server's non-Linux branch and the Windows swap behaviour run. The
-actions are pinned by commit.
+(`windows-2025`) and macOS (`macos-15`), where the server's non-Linux branch and the Windows swap behaviour run.
+`.github/workflows/scorecard.yml` runs OpenSSF Scorecard on pull requests to `main`, pushes to `main` and weekly, and
+puts the score in the job summary. The actions are pinned by commit.

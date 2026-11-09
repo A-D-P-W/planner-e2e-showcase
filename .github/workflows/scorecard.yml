@@ -1,0 +1,46 @@
+# OpenSSF Scorecard: scores this repo's security practices (0 to 10).
+# Runs on pull requests to main (the action calls that trigger experimental),
+# on pushes to main, and weekly. Results stay in this run: the JSON report is
+# uploaded as an artifact and the overall score is printed to the job summary.
+# Nothing is published (publish_results: false), so no id-token permission.
+name: scorecard
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 9 * * 2'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  scorecard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1, pinned by commit (same as runall)
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e   # v2.5.0, pinned by commit
+        with:
+          results_file: scorecard.json
+          results_format: json
+          publish_results: false
+      - name: Score to job summary
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open('scorecard.json'))
+          print(f"## Scorecard {d['score']} / 10 (scorecard {d['scorecard']['version']})")
+          print('| Check | Score | Reason |\n|---|---|---|')
+          for c in sorted(d['checks'], key=lambda c: c['name']):
+              print(f"| {c['name']} | {c['score']} | {c['reason'].replace('|', '/')} |")
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: scorecard
+          path: scorecard.json
+          retention-days: 30
