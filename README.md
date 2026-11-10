@@ -121,7 +121,9 @@ GitHub Actions (`.github/workflows/playwright.yml`) runs the suite in all three 
 request to `main`, and saves the HTML report with each run. A second job runs the browserless server tests on Windows
 (`windows-2025`) and macOS (`macos-15`), where the server's non-Linux branch and the Windows swap behaviour run.
 `.github/workflows/scorecard.yml` runs OpenSSF Scorecard on pull requests to `main`, pushes to `main` and weekly, and
-puts the score in the job summary. The actions are pinned by commit.
+puts the score in the job summary.
+`.github/workflows/osv-scanner.yml` runs OSV-Scanner on pull requests to `main` and fails a pull request that adds a
+dependency with a known vulnerability. The actions are pinned by commit.
 
 ## License
 
