@@ -1,13 +1,15 @@
 name: Playwright tests
+# Every push to every branch runs the suite (owner decision 2026-11-11, the same rule as qa-test-harness-template), so a
+# branch is tested before it reaches main. pull_request stays for pull requests from forks, which push no branch here; a
+# pull request from a branch in this repository therefore runs twice (once per event).
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 permissions:
   contents: read
-# A newer push to a pull request cancels that pull request's older run. Each push to main gets its own group (its
-# commit SHA), so no main commit is ever cancelled or dropped as pending.
+# A newer push to a pull request cancels that pull request's older run. Each push gets its own group (its commit SHA),
+# so no pushed commit, on main or any branch, is ever cancelled or dropped as pending.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
